@@ -1,0 +1,58 @@
+---
+
+  - name: Install vsftpd and dependancies
+    package:
+      name:   "{{ item }}"
+    loop:
+      "{{ packages }}"
+
+  - name: starting firewalld
+    service: name=firewalld state=started enabled=yes    
+ 
+  - name: "firewalld service rule"
+    firewalld:
+      service:       "{{ item }}"
+      permanent:  true
+      state:      enabled
+      immediate:  yes
+    with_items:
+      - ftp
+  
+  - name: Create writeable dirs
+    file:
+      path:   "{{ item }}"
+      owner:  root
+      group:  ftp
+      mode:   0775
+      setype: public_content_rw_t
+      state:  directory
+    with_items: "{{ vsftpd_writable_dirs }}"
+    when: vsftpd_write_enable
+  
+  - name: SELinux context for vsftpd to write files
+    sefcontext:
+      target:   "{{ item }}(/.*)?"
+      setype:   public_content_rw_t
+      state:    present
+    with_items: "{{ vsftpd_writable_dirs }}"
+    when: vsftpd_write_enable
+  
+  - name: "SELinux boolean: allow_ftpd_anon_write"
+    seboolean:
+      name:       allow_ftpd_anon_write
+      state:      yes
+      persistent: yes
+    when: vsftpd_anon_upload_enable
+  
+  - name: "SELinux boolean: ftpd_use_passive_mode"
+    seboolean:
+      name:       ftpd_use_passive_mode
+      state:      yes
+      persistent: yes
+  
+  - name: Create vsftpd configuration file
+    template: src=vsftpd.conf.j2 dest=/etc/vsftpd/vsftpd.conf
+    notify: restart vsftpd
+  
+  - name: Ensure vsftpd is started and enabled to start at boot.
+    service: name=vsftpd state=started enabled=yes
